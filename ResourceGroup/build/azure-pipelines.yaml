@@ -1,0 +1,104 @@
+
+
+resources:
+  repositories:
+  - repository: i8ndepot-automation
+    type: git
+    name: COSTCO/i8ndepot-automation
+variables:
+  ProjectName: 'costco'
+  DevBranch: 'refs/heads/master'
+  SelfRepositoryName: 'i8depot-shared'
+
+trigger:
+  branches:
+    include:
+    - master
+    - develop
+  paths:
+    include:
+    - ResourceGroup/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - stage: Build
+    jobs:
+    - job: Build_IAC
+      steps:
+      - checkout: self
+      - checkout: i8ndepot-automation
+      - task: CopyFiles@2
+        displayName: 'Copy TF files'
+        inputs:
+          sourceFolder: $(SelfRepositoryName)/ResourceGroup/deploy/terraform
+          contents: '**' 
+          cleanTargetFolder: true
+          TargetFolder: '$(Build.ArtifactStagingDirectory)'
+      - task: CopyFiles@2
+        displayName: 'Copy TerraForm Templates'
+        inputs:
+          sourceFolder: 'i8ndepot-automation/templates/terraform/modules'
+          contents: '**' 
+          cleanTargetFolder: false
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/modules'
+          OverWrite: true
+      - task: PublishPipelineArtifact@1
+        inputs:
+          targetPath: '$(Build.ArtifactStagingDirectory)'
+          artifact: 'terraform'
+          publishLocation: 'pipeline'
+  - stage: Deploy
+    jobs: 
+    - deployment: Deploy_to_Dev
+      condition: and(succeeded(), eq(variables['Build.sourceBranch'], 'refs/heads/main'))
+      environment: dev
+      timeoutInMinutes: 20
+      variables:
+        deploymentEnv: 'dev'
+        subscription: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)' #should change it
+        terraformSa: 'pipeline45'     #change
+        terraformRg: 'terraformcicd'   #change
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@0
+              displayName: 'Terraform Installer'
+              inputs:
+                terraformVersion: '0.12.25'
+            - task: DownloadPipelineArtifact@2
+              displayName: 'Download IaC Files'
+              inputs:
+                artifactName: 'terraform'
+                downloadPath: '$(System.DefaultWorkingDirectory)'
+            - task: TerraformTaskV2@2
+              inputs:
+                  provider: 'azurerm'
+                  command: 'init'
+                  workingDirectory: '$(System.DefaultWorkingDirectory)/$(deploymentEnv)'
+                  backendServiceArm: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)'
+                  backendAzureRmResourceGroupName: $(terraformRg)
+                  backendAzureRmStorageAccountName: $(terraformSa)
+                  backendAzureRmContainerName: 'tfstate'
+                  backendAzureRmKey: tf/$(deploymentEnv)/terraform.tfstate'
+            - task: TerraformTaskV2@2
+              inputs:
+                  provider: 'azurerm'
+                  command: 'plan'   
+                  commandOptions: '-var "environment=$(deploymentEnv)"'
+                  workingDirectory: '$(System.DefaultWorkingDirectory)/$(deploymentEnv)'
+                  backendServiceArm: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)'
+                  environmentServiceNameAzureRM: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)'
+            - task: TerraformTaskV2@2
+              displayName: 'Terraform Apply'
+              name: TerraformOutput
+              inputs:
+                  provider: 'azurerm'
+                  command: 'apply'
+                  commandOptions: '-auto-approve -var "environment=$(deploymentEnv)"' 
+                  workingDirectory: '$(System.DefaultWorkingDirectory)/$(deploymentEnv)'  
+                  backendServiceArm: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)'
+                  environmentServiceNameAzureRM: 'Free Trial (ecc3f3e2-b49f-452f-824e-83936e6c95a3)'
+   

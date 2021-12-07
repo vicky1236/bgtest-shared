@@ -1,0 +1,13 @@
+location       = "westus"
+projectName    = "depot"
+compPrefix     = "rg"
+environment    = "dev"
+IacRepository  =  "reponame"
+supportgroupEmail =   "NOReply@gmail.com"
+organizationName ="International"
+costcenterGLAccount = "555"
+dataOwner = "bharathgowda18@gmail.com"
+dataClassification = "internal"
+dataCompliance = "N/A"
+dataRegulation = "N/A"
+
